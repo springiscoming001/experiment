@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tree Layout Alignment Strategy User Experiment - LCA Task Evaluation</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.2em;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 15px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .control-group label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .control-group select,
+        .control-group button {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .control-group select:hover,
+        .control-group button:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+        
+        .control-group button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            font-weight: 600;
+        }
+        
+        .control-group button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        #startExperimentBtn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+        }
+        
+        #startExperimentBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+        }
+        
+        .task-panel {
+            background: #e8f4f8;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+        }
+        
+        .task-panel h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .task-instruction {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            line-height: 1.8;
+        }
+        
+        .task-status {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .status-item {
+            background: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        
+        .status-item.selected {
+            background: #667eea;
+            color: white;
+        }
+        
+        .status-item.correct {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status-item.incorrect {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .visualization-area {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            min-height: 900px;
+            position: relative;
+            overflow: hidden;
+        }
+        .zoom-toolbar {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            z-index: 10;
+            display: flex;
+            gap: 8px;
+        }
+        .zoom-toolbar button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+        .zoom-toolbar button:hover {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+        
+        .tree-svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .node {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .node circle {
+            fill: #667eea;
+            stroke: white;
+            stroke-width: 2px;
+        }
+        
+        .node.marked circle {
+            fill: #ff6b6b;
+            stroke: #ff4757;
+            stroke-width: 3px;
+        }
+        
+        .node.lca circle {
+            fill: #51cf66;
+            stroke: #40c057;
+            stroke-width: 3px;
+        }
+        
+        .node text {
+            font-size: 12px;
+            fill: #333;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+        
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 2px;
+        }
+        
+        .link.highlight {
+            stroke: #ff6b6b;
+            stroke-width: 3px;
+        }
+        
+        .results-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+        }
+        
+        .results-panel h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .results-table th,
+        .results-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .results-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+        
+        .results-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .export-btn {
+            margin-top: 15px;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+        
+        .export-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        
+        .info-box strong {
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌳 Tree Layout Alignment Strategy User Experiment</h1>
+        <p class="subtitle">Lowest Common Ancestor (LCA) Task Evaluation</p>
+        
+        <div class="info-box">
+            <strong>Experiment Instructions:</strong> This experiment aims to evaluate the impact of different parent node alignment strategies on finding the Lowest Common Ancestor (LCA) task.
+            Please follow the prompts to select two nodes, then click on their lowest common ancestor node.
+        </div>
+        
+        <div class="control-panel">
+            <div class="control-group">
+                <label>Experiment Control:</label>
+                <button id="startExperimentBtn">Start Experiment</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Actions:</label>
+                <button id="resetBtn">Reset</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Current Task Info:</label>
+                <div id="currentTaskInfo" style="padding: 10px; background: white; border-radius: 8px; text-align: center; font-weight: 600; color: #667eea;">
+                    Not Started<br><small style="color: #666; font-weight: normal;">(12 trees × 4 strategies = 48 tasks)</small>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Experiment Progress:</label>
+                <div id="progressDisplay" style="padding: 10px; background: white; border-radius: 8px; text-align: center; font-weight: 600;">
+                    Task 0 / 0
+                </div>
+            </div>
+        </div>
+        
+        <!-- Hidden selectors for experiment tracking -->
+        <div style="display: none;">
+            <select id="treeSelect">
+                <option value="">Please select a candidate tree...</option>
+            </select>
+            <select id="strategySelect">
+                <option value="midpoint">midpoint - Child node midpoint</option>
+                <option value="midZ">midZ - Middle position of largest subtree</option>
+                <option value="midDepthZ">midDepthZ - Middle position of deepest subtree</option>
+                <option value="weightedSquared">weightedSquared - Minimize weighted squared distance</option>
+            </select>
+        </div>
+        
+        <div class="task-panel">
+            <h3>📋 Current Task</h3>
+            <div class="task-instruction" id="taskInstruction">
+                Please click "Start Experiment" to begin the experiment!
+            </div>
+            <div class="task-status" id="taskStatus">
+                <div class="status-item">Status: Waiting to start</div>
+                <div class="status-item">Time elapsed: <span id="taskTime">0</span> seconds</div>
+            </div>
+        </div>
+        
+        <div class="visualization-area">
+            <div class="zoom-toolbar">
+                <button type="button" id="zoomInBtn" title="Zoom In">+</button>
+                <button type="button" id="zoomOutBtn" title="Zoom Out">−</button>
+                <button type="button" id="zoomResetBtn" title="Reset View">⟲</button>
+            </div>
+            <svg id="treeSvg" class="tree-svg"></svg>
+        </div>
+        
+        <div class="results-panel">
+            <h3>📊 Experiment Results</h3>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Task ID</th>
+                        <th>Tree Structure</th>
+                        <th>Alignment Strategy</th>
+                        <th>Marked Node Count</th>
+                        <th>Marked Nodes</th>
+                        <th>Correct Answer</th>
+                        <th>User Answer</th>
+                        <th>Is Correct</th>
+                        <th>Time (seconds)</th>
+                        <th>Click Count</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+            <button class="export-btn" id="exportBtn">Export Results (CSV)</button>
+            <button class="export-btn" id="exportPoolBtn" style="background: #28a745; margin-left: 10px;">Export Tree Pool (JSON)</button>
+        </div>
+    </div>
+    
+    <script>
+/**
+ * D3 Tree Layout Algorithm (Buchheim-Reingold-Tilford)
+ */
+
+// Node separation function
+function defaultSeparation(a, b) {
+  return a.parent === b.parent ? 1 : 1;
+}
+
+// Function to traverse the left contour of a subtree
+function nextLeft(v) {
+  var children = v.children;
+  return children && children.length ? children[0] : v.t;
+}
+
+// Function to traverse the right contour of a subtree
+function nextRight(v) {
+  var children = v.children;
+  return children && children.length ? children[children.length - 1] : v.t;
+}
+
+// Move the subtree rooted at w+ by increasing prelim(w+) and mod(w+) by shift
+function moveSubtree(wm, wp, shift) {
+  if(wp.i === wm.i) return;
+  var change = shift / (wp.i - wm.i);
+  wp.c -= change;
+  wp.s += shift;
+  wm.c += change;
+  wp.z += shift;
+  wp.m += shift;
+}
+
+// Execute all shift operations for a node
+function executeShifts(v) {
+  var shift = 0,
+      change = 0,
+      children = v.children, 
+      i = children.length, 
+      w;
+
+  while (--i >= 0) {
+    w = children[i];
+    w.z += shift;
+    w.m += shift;
+    shift += w.s + (change += w.c);
+  }
+}
+
+// Find the first ancestor of vim that is a sibling of v
+function nextAncestor(vim, v, ancestor) {
+  return vim.a.parent === v.parent ? vim.a : ancestor;
+}
+
+
+function D3TestTreeLayout(root, alignmentStrategy = 'midZ') {
+  const startTime = Date.now();
+  
+  const virtualRoot = {
+    children: [root],
+    depth: -1
+  };
+
+  function init(node, parent, depth, i) {
+    node.parent = parent || null;
+    node.children = node.children || [];
+    node.depth = depth || 0;
+    node.i = i || 0;
+    node.a = node;
+    node.z = 0;
+    node.m = 0;
+    node.c = 0;
+    node.s = 0;
+    node.t = null;
+    node.A = null;
+    node.title = node.id;
+    
+    for (let j = node.children.length - 1; j >= 0; --j) {
+      init(node.children[j], node, node.depth + 1, j);
+    }
+  }
+
+  init(virtualRoot, null, -1, 0);
+  init(root, virtualRoot, 0, 0);
+
+  // Post-order traversal
+  async function eachAfter(node, fn) {
+    if (node.children && node.children.length) {
+      for (let child of node.children) eachAfter(child, fn);
+    }
+    fn(node);
+  }
+
+  // Pre-order traversal
+  function eachBefore(node, fn) {
+    fn(node);
+    if (node.children && node.children.length) {
+      for (let child of node.children) eachBefore(child, fn);
+    }
+  }
+
+
+  // Calculate subtree sizes and depths
+  function calculateSubtreeSizesAndDepths(node) {
+    node.subtreeSize = 1;
+    node.subtreeDepth = 0;
+    
+    if (node.children && node.children.length) {
+      for (let child of node.children) {
+        calculateSubtreeSizesAndDepths(child);
+        node.subtreeSize += child.subtreeSize;
+        node.subtreeDepth = Math.max(node.subtreeDepth, child.subtreeDepth + 1);
+      }
+    }
+  }
+
+  calculateSubtreeSizesAndDepths(root);
+
+
+  function getMidZ(node) {
+      if (!node.children?.length) return;
+      
+      const maxSize = Math.max(...node.children.map(d => d.subtreeSize));
+      const maxNodes = node.children.filter(d => d.subtreeSize === maxSize);
+      
+      if (maxNodes.length === 1) return maxNodes[0].z;
+      
+      const firstZ = node.children[0].z;
+      const lastZ = node.children[node.children.length - 1].z;
+      const mid = (firstZ + lastZ) / 2;
+      
+      let closest = maxNodes[0];
+      let minDist = Math.abs(closest.z - mid);
+      
+      for (let i = 1; i < maxNodes.length; i++) {
+          const dist = Math.abs(maxNodes[i].z - mid);
+          if (dist < minDist) {
+              minDist = dist;
+              closest = maxNodes[i];
+          }
+      }
+      
+      return closest.z;
+  }
+
+  function getMidDepthZ(node) {
+    if (!node.children?.length) return;
+    
+    const maxDepth = Math.max(...node.children.map(d => d.subtreeDepth));
+    const maxDepthNodes = node.children.filter(d => d.subtreeDepth === maxDepth);
+    
+    if (maxDepthNodes.length === 1) return maxDepthNodes[0].z;
+    
+    const firstZ = node.children[0].z;
+    const lastZ = node.children[node.children.length - 1].z;
+    const mid = (firstZ + lastZ) / 2;
+    
+    let closest = maxDepthNodes[0];
+    let minDist = Math.abs(closest.z - mid);
+    
+    for (let i = 1; i < maxDepthNodes.length; i++) {
+        const dist = Math.abs(maxDepthNodes[i].z - mid);
+        if (dist < minDist) {
+            minDist = dist;
+            closest = maxDepthNodes[i];
+        }
+    }
+    
+    return closest.z;
+}
+
+
+  /**
+   * Calculate parent node position that minimizes weighted squared distance sum
+   * Minimize: Σ(subtreeSize × (subtreeRootZ - parentZ)²)
+   */
+  function getMinWeightedSquaredDistanceZ(node) {
+    if (!node.children || node.children.length === 0) return null;
+    
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    for (const child of node.children) {
+      weightedSum += child.subtreeSize * child.z;
+      totalWeight += child.subtreeSize;
+    }
+    
+    return weightedSum / totalWeight;
+  }
+
+
+  // First walk: assign preliminary x-coordinates
+  function firstWalk(v) {
+    var children = v.children,
+        siblings = v.parent ? v.parent.children : null,
+        w = v.i && siblings ? siblings[v.i - 1] : null;
+
+    if (children && children.length) {
+     
+      executeShifts(v);
+        
+      var midpoint = (children[0].z + children[children.length - 1].z) / 2;
+      var midZ = getMidZ(v);
+      var midDepthZ = getMidDepthZ(v);
+      
+      var minWeightedSquaredDistanceZ = getMinWeightedSquaredDistanceZ(v);
+
+      let targetZ;
+      switch(alignmentStrategy) {
+        case 'midpoint':
+          targetZ = midpoint;
+          break;
+        case 'midZ':
+          targetZ = midZ;
+          break;
+        case 'midDepthZ':
+          targetZ = midDepthZ;
+          break;
+        case 'weightedSquared':
+          targetZ = minWeightedSquaredDistanceZ;
+          break;
+        default:
+          targetZ = midZ;
+      }
+
+      if (w) {
+        v.z = w.z + defaultSeparation(v, w);
+        v.m = v.z - targetZ;
+      } else {
+        v.z = targetZ; 
+      }
+    } else if (w) {
+      v.z = w.z + defaultSeparation(v, w);
+    } 
+    v.parent.A = apportion(v, w, v.parent.A || siblings[0]);
+  }
+
+  let rightmost=0,leftmost=0;
+  function secondWalk(v) {
+    v.x = v.z + (v.parent ? v.parent.m : 0);
+    v.m += v.parent ? v.parent.m : 0;
+    if(v.x > rightmost) rightmost = v.x;
+    if(v.x < leftmost) leftmost = v.x;
+  }
+
+  // Apportion: reconcile adjacent subtrees
+  function apportion(v, w, ancestor) {
+    if (w) {
+      var vip = v,
+          vop = v,
+          vim = w,
+          vom = vip.parent.children[0],
+          sip = vip.m,
+          sop = vop.m,
+          sim = vim.m,
+          som = vom.m,
+          shift;
+      
+      while (vim = nextRight(vim), vip = nextLeft(vip), vim && vip) {
+        
+        vom = nextLeft(vom);
+        vop = nextRight(vop);
+        vop.a = v;
+        
+        shift = vim.z + sim - vip.z - sip + defaultSeparation(vim, vip);
+        
+        if (shift > 0) {
+          moveSubtree(nextAncestor(vim, v, ancestor), v, shift);
+          sip += shift;
+          sop += shift;
+        }
+        
+        sim += vim.m;
+        sip += vip.m;
+        som += vom.m;
+        sop += vop.m;
+      }
+      
+      if (vim && !nextRight(vop)) {
+        vop.t = vim;
+        vop.m += sim - sop;
+      }
+      
+      if (vip && !nextLeft(vom)) {
+        vom.t = vip;
+        vom.m += sip - som;
+        ancestor = v;
+      }
+    }
+    return ancestor;
+  }
+
+  calculateSubtreeSizesAndDepths(root);
+  eachAfter(root, firstWalk);
+  if (root.parent) root.parent.m = -root.z;
+  eachBefore(root, secondWalk);
+  
+  // Normalize and scale layout
+  let left = root, right = root, bottom = root;
+  
+  eachBefore(root, function(node) {
+    if (node.x < left.x) left = node;
+    if (node.x > right.x) right = node;
+    if (node.depth > bottom.depth) bottom = node;
+  });
+  
+  var dx = 1;
+  var dy = 1;
+  
+  var s = left === right ? 1 : defaultSeparation(left, right) / 2, 
+      kx = dx / (right.x - left.x + 2*s),
+      ky = dy / (bottom.depth || 1);
+  
+  let nodeCount = 0;
+  let maxWidth = 0;
+  eachBefore(root, function(node) {
+    nodeCount++;
+    if (node.x !== undefined && !isNaN(node.x)) {
+      maxWidth = Math.max(maxWidth, Math.abs(node.x));
+    }
+  });
+  
+  const LAYER_HEIGHT = 80;
+  let baseNodeSpacing = 70;
+  if (nodeCount > 100) {
+    const scaleFactor = Math.pow(nodeCount / 100, 0.6);
+    baseNodeSpacing = Math.max(90, 70 * scaleFactor);
+  }
+  if (maxWidth > 50) {
+    const widthScale = Math.min(1.5, 1 + (maxWidth - 50) / 100);
+    baseNodeSpacing = Math.max(baseNodeSpacing, 70 * widthScale);
+  }
+  if (nodeCount >= 200) baseNodeSpacing = Math.min(baseNodeSpacing, 95);
+  const nodeSpacing = baseNodeSpacing;
+  const levelSpacing = LAYER_HEIGHT;
+  
+  eachBefore(root, function(node) {
+    node.x = node.x * nodeSpacing;
+    node.y = node.depth * levelSpacing;
+  });
+
+  function calculateLayoutMetrics(root) {
+    const nodes = [];
+    const edges = [];
+    
+    eachBefore(root, function(node) {
+      nodes.push(node);
+      
+      if (node.parent && node.parent !== virtualRoot) {
+        edges.push({
+          source: node.parent,
+          target: node,
+          length: Math.sqrt(
+            Math.pow(node.x - node.parent.x, 2) + 
+            Math.pow(node.y - node.parent.y, 2)
+          )
+        });
+      }
+    });
+    
+    const nodeWidth = 10, nodeHeight = 10;
+    const halfWidth = nodeWidth / 2;
+    const halfHeight = nodeHeight / 2;
+    
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    nodes.forEach(node => {
+      const left = node.x - halfWidth;
+      const right = node.x + halfWidth;
+      const top = node.y - halfHeight;
+      const bottom = node.y + halfHeight;
+      
+      if (left < minX) minX = left;
+      if (right > maxX) maxX = right;
+      if (top < minY) minY = top;
+      if (bottom > maxY) maxY = bottom;
+    });
+    
+    const layoutWidth = maxX - minX;
+    const layoutHeight = maxY - minY;
+    const layoutArea = layoutWidth * layoutHeight;
+    
+    const edgeBends = 0;
+    
+    const edgeLengths = edges.map(e => e.length);
+    const totalEdgeLength = edgeLengths.reduce((sum, len) => sum + len, 0);
+    const avgEdgeLength = edgeLengths.length > 0 ? (totalEdgeLength / edgeLengths.length) : 0;
+    const edgeLengthVariance = edgeLengths.length > 0 ? edgeLengths.reduce((sum, len) => {
+      return sum + Math.pow(len - avgEdgeLength, 2);
+    }, 0) / edgeLengths.length : 0;
+    
+    const aspectRatio = layoutWidth / layoutHeight;
+    
+    const nodeDensity = nodes.length / layoutArea;
+    
+    function findLongestPath(node, currentLength = 0) {
+      if (!node.children || node.children.length === 0) {
+        return currentLength;
+      }
+      
+      let maxLength = currentLength;
+      for (const child of node.children) {
+        const edgeLength = Math.sqrt(
+          Math.pow(child.x - node.x, 2) + 
+          Math.pow(child.y - node.y, 2)
+        );
+        const pathLength = findLongestPath(child, currentLength + edgeLength);
+        if (pathLength > maxLength) {
+          maxLength = pathLength;
+        }
+      }
+      return maxLength;
+    }
+    
+    const longestPathLength = findLongestPath(root, 0);
+    
+    const angles = [];
+    edges.forEach(edge => {
+      const dx = edge.target.x - edge.source.x;
+      const dy = edge.target.y - edge.source.y;
+      const angle = Math.atan2(dy, dx);
+      angles.push(angle);
+    });
+    
+    let slopeRange = 0;
+    if (angles.length > 0) {
+      const minAngle = Math.min(...angles);
+      const maxAngle = Math.max(...angles);
+      let angleRange = maxAngle - minAngle;
+      
+      if (angleRange > Math.PI) {
+        angleRange = 2 * Math.PI - angleRange;
+      }
+      
+      slopeRange = angleRange;
+    }
+    
+    return {
+      layoutArea: parseFloat(layoutArea.toFixed(2)),
+      avgEdgeLength: parseFloat(avgEdgeLength.toFixed(2)),
+      totalEdgeLength: parseFloat(totalEdgeLength.toFixed(2)),
+      edgeLengthVariance: parseFloat(edgeLengthVariance.toFixed(2)),
+      aspectRatio: parseFloat(aspectRatio.toFixed(2)),
+      nodeDensity: parseFloat(nodeDensity.toFixed(6)),
+      edgeBends: edgeBends,
+      width: parseFloat(layoutWidth.toFixed(2)),
+      height: parseFloat(layoutHeight.toFixed(2)),
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      longestPathLength: parseFloat(longestPathLength.toFixed(2)),
+      slopeRange: parseFloat(slopeRange.toFixed(2)),
+      nodeSpacing: nodeSpacing,
+      levelSpacing: levelSpacing
+    };
+  }
+  
+  const metrics = calculateLayoutMetrics(root);
+  const layoutTime = Date.now() - startTime;
+  
+  root.metrics = metrics;
+  root.layoutTime = layoutTime;
+
+  return { root, metrics, layoutTime };
+}
+
+
+if (typeof window !== 'undefined') {
+  window.D3TestTreeLayout = D3TestTreeLayout;
+  if (window.rootData) {
+    const result = D3TestTreeLayout(window.rootData);
+  }
+} else if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { D3TestTreeLayout };
+}
+</script>
+    <script>
+        // ===== Fixed tree pool RNG (deterministic) =====
+        let poolSeed = 123456;
+
+        function poolRandom() {
+            poolSeed = (poolSeed * 9301 + 49297) % 233280;
+            return poolSeed / 233280;
+        }
+
+        function poolRandomInt(min, max) {
+            return min + Math.floor(poolRandom() * (max - min + 1));
+        }
+
+        function poolShuffle(array) {
+            const a = [...array];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(poolRandom() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+        
+        let poolInitialized = false;
+        
+        // Global variables
+        let currentTree = null;
+        let currentTreeId = null;
+        let currentStrategy = 'midZ';
+        let selectedNodes = [];
+        let currentTask = null;
+        let taskStartTime = null;
+        let clickCount = 0;
+        let experimentResults = [];
+        let taskCounter = 0;
+        let svg, g, gZoom, zoomBehavior, simulation;
+        
+        // Task queue variables
+        let taskQueue = [];
+        let currentTaskIndex = 0;
+        let isExperimentRunning = false;
+        
+        // Alignment strategies
+        const alignmentStrategies = [
+            { value: 'midpoint', label: 'midpoint - Child node midpoint' },
+            { value: 'midZ', label: 'midZ - Middle position of largest subtree' },
+            { value: 'midDepthZ', label: 'midDepthZ - Middle position of deepest subtree' },
+            { value: 'weightedSquared', label: 'weightedSquared - Minimize weighted squared distance' }
+        ];
+        
+        // Candidate tree data - dynamically generated 100 trees
+        const candidateTreesData = [];
+        
+        // Generate 100 trees with random sizes between 200-500 (using fixed seed)
+        for (let i = 0; i < 100; i++) {
+            const treeSize = poolRandomInt(200, 500); // 200-500 nodes
+            candidateTreesData.push({
+                id: `candidate_${i + 1}`,
+                name: `Tree #${i + 1} - ${treeSize} nodes`,
+                treeSize: treeSize,
+                treeIndex: i,
+                maxImprovement: 40 + poolRandom() * 5, // Random improvement 40-45%
+                betterStrategies: ["midZ", "midDepthZ", "weightedSquared", "midpoint"]
+            });
+        }
+        
+        // Pre-generate fixed tree structures and marked nodes
+        let fixedTrees = {};
+        let fixedMarkedNodes = {};
+        
+        // Tree generation function
+        const N_MAX = 500;
+        function generateTreeBA1(nodeCount, maxDepth = 10, maxBranching = 20) {
+            nodeCount = Math.min(nodeCount, N_MAX);
+  const nodes = {};
+            let nextId = 0;
+            
+            function getDepth(nodeId) {
+                let depth = 0;
+                let currentId = nodeId;
+                let node = nodes[currentId];
+                while (node && node.parent && node.parent.length > 0 && node.parent[0] !== null && node.parent[0] in nodes) {
+                    depth++;
+                    currentId = node.parent[0];
+                    node = nodes[currentId];
+                    if (!node) break;
+                }
+                return depth;
+            }
+            
+            function calculateProbabilities() {
+                const totalEdges = Object.values(nodes).reduce((sum, node) => sum + (node.children ? node.children.length : 0), 0);
+                const probabilities = {};
+                for (const nodeId in nodes) {
+                    const degree = nodes[nodeId].children ? nodes[nodeId].children.length : 0;
+                    probabilities[nodeId] = (degree + 1) / (totalEdges + Object.keys(nodes).length);
+                }
+                return probabilities;
+            }
+            
+            const root = {
+                id: String(nextId++),
+                parent: [],
+                children: []
+            };
+            nodes[root.id] = root;
+            
+            while (Object.keys(nodes).length < nodeCount) {
+                const candidateNodes = [];
+                for (const nodeId in nodes) {
+                    const currentDepth = getDepth(nodeId);
+                    const childCount = nodes[nodeId].children ? nodes[nodeId].children.length : 0;
+                    if (childCount < maxBranching && currentDepth < maxDepth) {
+                        candidateNodes.push(nodeId);
+                    }
+                }
+                
+                if (candidateNodes.length === 0) break;
+                
+                const probabilities = calculateProbabilities();
+                let totalProb = 0;
+                for (const nodeId of candidateNodes) {
+                    totalProb += probabilities[nodeId] || 0;
+                }
+                
+                let selectedId = candidateNodes[candidateNodes.length - 1];
+                if (totalProb > 0) {
+                    const randVal = poolRandom() * totalProb;
+                    let cumulative = 0;
+                    for (const nodeId of candidateNodes) {
+                        cumulative += probabilities[nodeId] || 0;
+                        if (randVal <= cumulative) {
+                            selectedId = nodeId;
+                            break;
+                        }
+                    }
+                } else {
+                    selectedId = candidateNodes[poolRandomInt(0, candidateNodes.length - 1)];
+                }
+                
+                const newNode = {
+                    id: String(nextId++),
+                    parent: [selectedId],
+                    children: []
+                };
+                
+                if (!nodes[selectedId].children) nodes[selectedId].children = [];
+                nodes[selectedId].children.push(newNode.id);
+                nodes[newNode.id] = newNode;
+                
+                if (Object.keys(nodes).length >= nodeCount) break;
+            }
+            
+            function convertToTreeStructure(rootId, nodesDict) {
+                function buildNode(nodeId) {
+                    const nodeData = nodesDict[nodeId];
+                    const node = {
+                        id: nodeData.id,
+                        children: []
+                    };
+                    if (nodeData.children && nodeData.children.length > 0) {
+                        for (const childId of nodeData.children) {
+                            const childNode = buildNode(childId);
+                            childNode.parent = node;
+                            node.children.push(childNode);
+                        }
+                    }
+                    return node;
+                }
+                return buildNode(rootId);
+            }
+            
+            return convertToTreeStructure(root.id, nodes);
+        }
+        
+        // Tree templates
+        const treeTemplates = {};
+        
+        candidateTreesData.forEach(candidate => {
+            const size = candidate.treeSize;
+            const maxBranching = size >= 200 ? 8 : 20;
+            treeTemplates[candidate.id] = {
+                name: candidate.name,
+                candidate: candidate,
+                generate: () => generateTreeBA1(size, 10, maxBranching)
+            };
+        });
+        
+        // Fisher-Yates shuffle
+        function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+        
+        // Start experiment
+        function startExperiment() {
+            // Only generate tree pool once (fixed for all users)
+            if (!poolInitialized) {
+                fixedTrees = {};
+                fixedMarkedNodes = {};
+                candidateTreesData.forEach(candidate => {
+                    const size = candidate.treeSize;
+                    const maxBranching = size >= 200 ? 8 : 20;
+                    fixedTrees[candidate.id] = generateTreeBA1(size, 10, maxBranching);
+                    
+                    // Pre-generate 6 fixed marked leaf nodes for each tree
+                    const tree = fixedTrees[candidate.id];
+                    const leafNodes = [];
+                    function collectLeafNodes(node) {
+                        if (!node.children || node.children.length === 0) {
+                            leafNodes.push(node);
+                        } else {
+                            node.children.forEach(collectLeafNodes);
+                        }
+                    }
+                    collectLeafNodes(tree);
+                    
+                    // Use poolShuffle for fixed marked nodes
+                    const shuffledLeaves = poolShuffle(leafNodes);
+                    fixedMarkedNodes[candidate.id] = shuffledLeaves.slice(0, 6).map(n => n.id);
+                });
+                poolInitialized = true;
+            }
+            
+            // Randomly select 12 trees for this experiment session (uses regular random)
+            const selectedTreeIds = shuffleArray(candidateTreesData.map(c => c.id)).slice(0, 12);
+            
+            // Generate task queue: 12 trees × 4 strategies = 48 tasks
+            const strategyValues = alignmentStrategies.map(s => s.value);
+            const queue = [];
+            selectedTreeIds.forEach(treeId => {
+                strategyValues.forEach(strategy => {
+                    queue.push({
+                        treeId: treeId,
+                        strategy: strategy
+                    });
+                });
+            });
+            
+            // Shuffle task order
+            taskQueue = shuffleArray(queue);
+            currentTaskIndex = 0;
+            experimentResults = [];
+            taskCounter = 0;
+            isExperimentRunning = true;
+            
+            // Update progress display
+            updateProgressDisplay();
+            
+            // Disable start button
+            document.getElementById('startExperimentBtn').disabled = true;
+            document.getElementById('startExperimentBtn').textContent = 'Experiment Running...';
+            
+            // Start first task
+            loadNextTask();
+        }
+        
+        // Load next task
+        function loadNextTask() {
+            if (!isExperimentRunning) return;
+            
+            if (currentTaskIndex >= taskQueue.length) {
+                finishExperiment();
+                return;
+            }
+            
+            const taskConfig = taskQueue[currentTaskIndex];
+            const candidate = candidateTreesData.find(c => c.id === taskConfig.treeId);
+            
+            // Use pre-generated fixed tree
+            currentTree = fixedTrees[taskConfig.treeId];
+            currentTreeId = taskConfig.treeId;
+            currentStrategy = taskConfig.strategy;
+            
+            // Update task info display
+            const strategyLabel = alignmentStrategies.find(s => s.value === currentStrategy)?.label || currentStrategy;
+            document.getElementById('currentTaskInfo').innerHTML = 
+                `<span style="color: #667eea;">${candidate.name}</span><br>` +
+                `<span style="color: #764ba2;">Strategy: ${strategyLabel}</span>`;
+            
+            // Draw tree
+            drawTree(currentTree, currentStrategy);
+            
+            // Start new task
+            startNewTask();
+            
+            // Update progress
+            updateProgressDisplay();
+        }
+        
+        // Update progress display
+        function updateProgressDisplay() {
+            const total = taskQueue.length;
+            const current = isExperimentRunning ? currentTaskIndex + 1 : 0;
+            console.log(`[Progress] currentTaskIndex=${currentTaskIndex}, current=${current}, total=${total}, running=${isExperimentRunning}`);
+            document.getElementById('progressDisplay').textContent = 
+                `Task ${current} / ${total}`;
+        }
+        
+        // Finish experiment
+        function finishExperiment() {
+            isExperimentRunning = false;
+            
+            // Re-enable start button
+            document.getElementById('startExperimentBtn').disabled = false;
+            document.getElementById('startExperimentBtn').textContent = 'Restart Experiment';
+            
+            // Calculate statistics
+            const totalTasks = experimentResults.length;
+            const correctTasks = experimentResults.filter(r => r.isCorrect).length;
+            const accuracy = totalTasks > 0 ? ((correctTasks / totalTasks) * 100).toFixed(1) : 0;
+            const avgTime = totalTasks > 0 ? (experimentResults.reduce((sum, r) => sum + r.timeSpent, 0) / totalTasks).toFixed(1) : 0;
+            
+            // Display completion message
+            setTimeout(() => {
+                alert(`🎉 Experiment Complete!\n\n` +
+                      `Total Tasks: ${totalTasks}\n` +
+                      `Correct: ${correctTasks}\n` +
+                      `Accuracy: ${accuracy}%\n` +
+                      `Average Time: ${avgTime} seconds\n\n` +
+                      `Click "Restart Experiment" to start a new session.`);
+            }, 500);
+            
+            // Update display
+            document.getElementById('currentTaskInfo').innerHTML = 
+                `<span style="color: #28a745;">✅ Experiment Completed!</span>`;
+            updateProgressDisplay();
+        }
+        
+        // Populate tree select dropdown
+        const treeSelectElement = document.getElementById('treeSelect');
+        if (treeSelectElement) {
+            candidateTreesData.forEach(candidate => {
+                const option = document.createElement('option');
+                option.value = candidate.id;
+                option.textContent = `${candidate.name} (Improvement: ${candidate.maxImprovement.toFixed(1)}%)`;
+                treeSelectElement.appendChild(option);
+            });
+        }
+        
+        // LCA task generator - randomly marks 3, 6, or 9 leaf nodes
+        function generateLCATask(tree, treeId) {
+            // Use pre-generated fixed marked nodes (6 nodes)
+            const preGeneratedMarkedNodeIds = fixedMarkedNodes[treeId] || [];
+            
+            // Collect all leaf nodes
+            const leafNodes = [];
+            function collectLeafNodes(node) {
+                if (!node.children || node.children.length === 0) {
+                    leafNodes.push(node);
+                } else {
+                    node.children.forEach(collectLeafNodes);
+                }
+            }
+            collectLeafNodes(tree);
+            
+            // Create node ID to node object mapping
+            const nodeMap = {};
+            leafNodes.forEach(node => {
+                nodeMap[node.id] = node;
+            });
+            
+            // Use pre-generated marked node IDs to get node objects
+            const selectedLeaves = preGeneratedMarkedNodeIds.map(id => nodeMap[id]).filter(n => n !== undefined);
+            
+            // Calculate LCA of these marked nodes
+            const lca = findLCAForMultipleNodes(tree, selectedLeaves.map(n => n.id));
+            
+            return {
+                markedNodes: selectedLeaves.map(n => n.id),
+                markedNodeCount: selectedLeaves.length,
+                lca: lca.id,
+                lcaObj: lca,
+                markedNodeObjs: selectedLeaves
+            };
+        }
+        
+        // Find LCA for multiple nodes
+        function findLCAForMultipleNodes(root, nodeIds) {
+            if (nodeIds.length === 0) return root;
+            if (nodeIds.length === 1) {
+                function findNode(node, targetId) {
+                    if (node.id === targetId) return node;
+                    if (node.children) {
+                        for (const child of node.children) {
+                            const result = findNode(child, targetId);
+                            if (result) return result;
+                        }
+                    }
+                    return null;
+                }
+                return findNode(root, nodeIds[0]) || root;
+            }
+            
+            function findPath(node, targetId, path) {
+                if (!node) return null;
+                path.push(node);
+                if (node.id === targetId) return path;
+                if (node.children) {
+                    for (const child of node.children) {
+                        const result = findPath(child, targetId, path);
+                        if (result) return result;
+                    }
+                }
+                path.pop();
+                return null;
+            }
+            
+            const paths = [];
+            for (const nodeId of nodeIds) {
+                const path = [];
+                findPath(root, nodeId, path);
+                if (path.length > 0) {
+                    paths.push(path);
+                }
+            }
+            
+            if (paths.length === 0) return root;
+            
+            let lca = root;
+            const minPathLength = Math.min(...paths.map(p => p.length));
+            
+            for (let i = 0; i < minPathLength; i++) {
+                const nodeAtLevel = paths[0][i];
+                let allSame = true;
+                
+                for (let j = 1; j < paths.length; j++) {
+                    if (paths[j][i].id !== nodeAtLevel.id) {
+                        allSame = false;
+                        break;
+                    }
+                }
+                
+                if (allSame) {
+                    lca = nodeAtLevel;
+                } else {
+                    break;
+                }
+            }
+            
+            return lca;
+        }
+        
+        function initSVG() {
+            const container = d3.select('.visualization-area');
+            const width = container.node().clientWidth - 40;
+            const height = 900;
+            svg = d3.select('#treeSvg')
+                .attr('width', width)
+                .attr('height', height);
+            svg.selectAll('*').remove();
+            gZoom = svg.append('g');
+            g = gZoom.append('g').attr('transform', 'translate(40, 40)');
+            zoomBehavior = d3.zoom()
+                .scaleExtent([0.2, 5])
+                .on('zoom', function(event) { gZoom.attr('transform', event.transform); });
+            svg.call(zoomBehavior);
+        }
+        
+        // Deep copy tree without parent references
+        function deepCopyWithoutParent(node) {
+            const copy = {
+                id: node.id,
+                children: []
+            };
+            if (node.children && node.children.length > 0) {
+                copy.children = node.children.map(child => {
+                    const childCopy = deepCopyWithoutParent(child);
+                    return childCopy;
+                });
+            }
+            return copy;
+        }
+        
+        // Draw tree
+        function drawTree(tree, strategy) {
+            if (!tree) return;
+            
+            const treeCopy = deepCopyWithoutParent(tree);
+            
+            const layoutResult = D3TestTreeLayout(treeCopy, strategy);
+            const laidOutTree = layoutResult.root;
+            
+            if (!laidOutTree || laidOutTree.x === undefined || laidOutTree.y === undefined) {
+                console.error('Layout failed: node coordinates not set', laidOutTree);
+                return;
+            }
+            
+            const width = svg.attr('width') - 80;
+            const height = svg.attr('height') - 80;
+            
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            
+            function traverse(node) {
+                if (node.x !== undefined && node.y !== undefined && !isNaN(node.x) && !isNaN(node.y)) {
+                    minX = Math.min(minX, node.x);
+                    maxX = Math.max(maxX, node.x);
+                    minY = Math.min(minY, node.y);
+                    maxY = Math.max(maxY, node.y);
+                }
+                if (node.children) {
+                    node.children.forEach(traverse);
+                }
+            }
+            traverse(laidOutTree);
+            
+            if (minX === Infinity || maxX === -Infinity || isNaN(minX) || isNaN(maxX)) {
+                console.error('Layout failed: cannot calculate tree boundaries', { minX, maxX, minY, maxY, laidOutTree });
+                return;
+            }
+            
+            const treeWidth = maxX - minX || 1;
+            const treeHeight = maxY - minY || 1;
+            const padding = 40;
+            const boxW = width - padding * 2;
+            const boxH = height - padding * 2;
+            const scaleX = boxW / treeWidth;
+            const scaleY = boxH / treeHeight;
+            const offsetX = padding - minX * scaleX;
+            const offsetY = padding - minY * scaleY;
+            const n = layoutResult.metrics?.nodeCount || 0;
+            const nodeR = n >= 500 ? 5 : n >= 300 ? 6 : 10;
+
+            console.log('Layout params:', {
+                minX, maxX, minY, maxY,
+                treeWidth, treeHeight,
+                scaleX, scaleY, offsetX, offsetY,
+                containerWidth: width, containerHeight: height,
+                nodeCount: layoutResult.metrics?.nodeCount || 0
+            });
+            
+            // Clear previous content
+            g.selectAll('*').remove();
+            
+            // Draw edges
+            const links = [];
+            function collectLinks(node) {
+                if (node.children) {
+                    node.children.forEach(child => {
+                        links.push({ source: node, target: child });
+                        collectLinks(child);
+                    });
+                }
+            }
+            collectLinks(laidOutTree);
+            
+            g.selectAll('.link')
+                .data(links)
+                .enter()
+                .append('path')
+                .attr('class', 'link')
+                .attr('d', d => {
+                    const x1 = (d.source.x || 0) * scaleX + offsetX;
+                    const y1 = (d.source.y || 0) * scaleY + offsetY;
+                    const x2 = (d.target.x || 0) * scaleX + offsetX;
+                    const y2 = (d.target.y || 0) * scaleY + offsetY;
+                    return `M ${x1} ${y1} L ${x2} ${y2}`;
+                })
+                .attr('stroke', '#999')
+                .attr('stroke-width', 1.5)
+                .attr('fill', 'none');
+            
+            // Draw nodes
+            const nodes = [];
+            function collectNodes(node) {
+                nodes.push(node);
+                if (node.children) {
+                    node.children.forEach(collectNodes);
+                }
+            }
+            collectNodes(laidOutTree);
+            
+            const nodeElements = g.selectAll('.node')
+                .data(nodes)
+                .enter()
+                .append('g')
+                .attr('class', 'node')
+                .attr('transform', d => {
+                    const x = (d.x || 0) * scaleX + offsetX;
+                    const y = (d.y || 0) * scaleY + offsetY;
+                    return `translate(${x}, ${y})`;
+                })
+                .on('click', function(event, d) {
+                    handleNodeClick(d);
+                });
+            
+            nodeElements.append('circle')
+                .attr('r', nodeR)
+                .attr('fill', '#667eea')
+                .attr('stroke', 'white')
+                .attr('stroke-width', nodeR >= 8 ? 1.5 : 1);
+            
+            // Store node mapping
+            window.nodeMap = {};
+            nodes.forEach(node => {
+                window.nodeMap[node.id] = node;
+            });
+            
+            // If there's an active task, highlight marked nodes
+            if (currentTask) {
+                setTimeout(() => {
+                    highlightMarkedNodes();
+                }, 100);
+            }
+        }
+        
+        // Handle node click
+        function handleNodeClick(node) {
+            if (!currentTask || !isExperimentRunning) {
+                if (!isExperimentRunning && taskQueue.length > 0) {
+                    alert('Please click "Start Experiment" to begin the experiment!');
+                } else {
+                    alert('Please start a new task first!');
+                }
+                return;
+            }
+            
+            clickCount++;
+            
+            const userAnswer = node.id;
+            const correctAnswer = currentTask.lca;
+            const isCorrect = userAnswer === correctAnswer;
+            const timeSpent = Math.round((Date.now() - taskStartTime) / 1000);
+            
+            // Highlight the correct answer
+            highlightLCA(correctAnswer);
+            
+            // Record result - use currentTreeId to get tree name
+            const treeCandidate = candidateTreesData.find(c => c.id === currentTreeId);
+            const treeLabel = treeCandidate 
+                ? `${treeCandidate.name} (Nodes: ${treeCandidate.treeSize})` 
+                : 'Unknown';
+            
+            const result = {
+                taskId: ++taskCounter,
+                treeType: treeLabel,
+                strategy: currentStrategy,
+                markedNodeCount: currentTask.markedNodeCount,
+                markedNodes: currentTask.markedNodes.join(';'),
+                correctAnswer: correctAnswer,
+                userAnswer: userAnswer,
+                isCorrect: isCorrect,
+                timeSpent: timeSpent,
+                clickCount: clickCount
+            };
+            
+            experimentResults.push(result);
+            updateResultsTable();
+            
+            // Show result
+            setTimeout(() => {
+                alert(isCorrect ? 
+                    `✅ Correct! LCA is node ${correctAnswer}. Time: ${timeSpent} seconds.` :
+                    `❌ Incorrect. The correct answer is node ${correctAnswer}, you selected node ${userAnswer}. Time: ${timeSpent} seconds.`
+                );
+                
+                // Move to next task
+                currentTaskIndex++;
+                loadNextTask();
+            }, 500);
+        }
+        
+        // Highlight marked leaf nodes with red circles
+        function highlightMarkedNodes() {
+            if (!currentTask) return;
+            
+            currentTask.markedNodes.forEach(nodeId => {
+                d3.selectAll('.node')
+                    .filter(d => d.id === nodeId)
+                    .classed('marked', true);
+            });
+        }
+        
+        // Highlight LCA
+        function highlightLCA(lcaId) {
+            d3.selectAll('.node')
+                .filter(d => d.id === lcaId)
+                .classed('lca', true);
+        }
+        
+        // Update task status
+        function updateTaskStatus() {
+            const selectedCountEl = document.getElementById('selectedCount');
+            if (selectedCountEl) {
+                selectedCountEl.textContent = selectedNodes.length;
+            }
+            if (taskStartTime) {
+                const elapsed = Math.round((Date.now() - taskStartTime) / 1000);
+                const taskTimeEl = document.getElementById('taskTime');
+                if (taskTimeEl) {
+                    taskTimeEl.textContent = elapsed;
+                }
+            }
+        }
+        
+        // Start new task
+        function startNewTask() {
+            if (!currentTree) {
+                alert('Please select a tree structure first!');
+                return;
+            }
+            
+            clickCount = 0;
+            currentTask = generateLCATask(currentTree, currentTreeId);
+            
+            // Clear previous styles
+            d3.selectAll('.node')
+                .classed('marked', false)
+                .classed('lca', false);
+            
+            // Highlight marked leaf nodes
+            highlightMarkedNodes();
+            
+            // Start timer when nodes are highlighted
+            taskStartTime = Date.now();
+            
+            // Update task instruction
+            const markedNodesList = currentTask.markedNodes.map(id => `<strong>${id}</strong>`).join(', ');
+            document.getElementById('taskInstruction').innerHTML = 
+                `Find the Lowest Common Ancestor (LCA) of the ${currentTask.markedNodeCount} marked leaf nodes (shown in red circles):
+                <br>🔴 Marked nodes: ${markedNodesList}
+                <br><br><strong>Please click on their LCA node.</strong>
+                <br><small>Note: Accuracy is emphasized over speed. Take your time to find the correct answer.</small>`;
+            
+            updateTaskStatus();
+            
+            // Update progress
+            updateProgressDisplay();
+            
+            // Start timer
+            const timer = setInterval(() => {
+                if (taskStartTime) {
+                    updateTaskStatus();
+                } else {
+                    clearInterval(timer);
+                }
+            }, 1000);
+        }
+        
+        // Update results table
+        function updateResultsTable() {
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+            
+            experimentResults.forEach(result => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${result.taskId}</td>
+                    <td>${result.treeType}</td>
+                    <td>${result.strategy}</td>
+                    <td>${result.markedNodeCount}</td>
+                    <td>${result.markedNodes}</td>
+                    <td>${result.correctAnswer}</td>
+                    <td>${result.userAnswer}</td>
+                    <td style="color: ${result.isCorrect ? '#28a745' : '#dc3545'}; font-weight: bold;">
+                        ${result.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                    </td>
+                    <td>${result.timeSpent}</td>
+                    <td>${result.clickCount}</td>
+                `;
+            });
+        }
+        
+        // Export results
+        function exportResults() {
+            if (experimentResults.length === 0) {
+                alert('No experiment results to export!');
+                return;
+            }
+            
+            const csvHeader = 'Task ID,Tree Structure,Alignment Strategy,Marked Node Count,Marked Nodes,Correct Answer,User Answer,Is Correct,Time (seconds),Click Count\n';
+            const csvRows = experimentResults.map(r => 
+                `${r.taskId},${r.treeType},${r.strategy},${r.markedNodeCount},${r.markedNodes},${r.correctAnswer},${r.userAnswer},${r.isCorrect},${r.timeSpent},${r.clickCount}`
+            ).join('\n');
+            
+            const csvContent = csvHeader + csvRows;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `lca_experiment_results_${new Date().toISOString().slice(0,10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Event listeners
+        document.getElementById('startExperimentBtn').addEventListener('click', startExperiment);
+        
+        // Tree selection (for non-experiment mode or results viewing)
+        document.getElementById('treeSelect').addEventListener('change', function() {
+            const treeType = this.value;
+            const template = treeTemplates[treeType];
+            currentTree = template.generate();
+            currentStrategy = document.getElementById('strategySelect').value;
+            drawTree(currentTree, currentStrategy);
+            
+            if (!isExperimentRunning) {
+                startNewTask();
+            }
+        });
+        
+        // Strategy selection
+        document.getElementById('strategySelect').addEventListener('change', function() {
+            currentStrategy = this.value;
+            if (currentTree) {
+                drawTree(currentTree, currentStrategy);
+                
+                if (!isExperimentRunning) {
+                    startNewTask();
+                }
+            }
+        });
+        
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to reset the experiment? This will clear all experiment results.')) {
+                isExperimentRunning = false;
+                experimentResults = [];
+                taskCounter = 0;
+                taskQueue = [];
+                currentTaskIndex = 0;
+                selectedNodes = [];
+                currentTask = null;
+                taskStartTime = null;
+                clickCount = 0;
+                
+                // Reset UI
+                updateResultsTable();
+                document.getElementById('progressDisplay').textContent = 'Task 0 / 0';
+                document.getElementById('currentTaskInfo').innerHTML = 'Not Started';
+                document.getElementById('taskInstruction').innerHTML = 
+                    'Please click "Start Experiment" to begin the experiment!';
+                
+                document.getElementById('startExperimentBtn').disabled = false;
+                document.getElementById('startExperimentBtn').textContent = 'Start Experiment';
+                
+                if (svg) {
+                    svg.selectAll('*').remove();
+                }
+            }
+        });
+        
+        document.getElementById('exportBtn').addEventListener('click', exportResults);
+        
+        // Export Tree Pool button
+        document.getElementById('exportPoolBtn').addEventListener('click', function() {
+            if (!poolInitialized || Object.keys(fixedTrees).length === 0) {
+                alert('Please start the experiment first to generate the tree pool!');
+                return;
+            }
+            
+            // Prepare tree pool data
+            const poolData = [];
+            
+            candidateTreesData.forEach(candidate => {
+                const tree = fixedTrees[candidate.id];
+                const markedNodes = fixedMarkedNodes[candidate.id] || [];
+                
+                if (tree) {
+                    // Convert tree to JSON string
+                    const treeJson = JSON.stringify(tree);
+                    
+                    poolData.push({
+                        treeId: candidate.id,
+                        treeName: candidate.name,
+                        treeSize: candidate.treeSize,
+                        markedNodeIds: markedNodes.join(';'),
+                        treeData: treeJson
+                    });
+                }
+            });
+            
+            // Export as JSON
+            const jsonStr = JSON.stringify(poolData, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'tree_pool_data.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            alert(`Tree pool exported successfully! Total trees: ${poolData.length}`);
+        });
+        
+        document.getElementById('zoomInBtn').addEventListener('click', function() {
+            if (svg && zoomBehavior) svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.3);
+        });
+        document.getElementById('zoomOutBtn').addEventListener('click', function() {
+            if (svg && zoomBehavior) svg.transition().duration(200).call(zoomBehavior.scaleBy, 0.7);
+        });
+        document.getElementById('zoomResetBtn').addEventListener('click', function() {
+            if (svg && zoomBehavior) svg.transition().duration(200).call(zoomBehavior.transform, d3.zoomIdentity);
+        });
+        
+        initSVG();
+        
+        // Default select first candidate tree
+        if (candidateTreesData.length > 0) {
+            const firstCandidate = candidateTreesData[0];
+            treeSelectElement.value = firstCandidate.id;
+        }
+    </script>
+</body>
+</html>
