@@ -1011,15 +1011,15 @@ if (typeof window !== 'undefined') {
         
         // Function to compute a simple hash for tree structure (for detecting duplicate structures)
         function computeTreeHash(tree) {
-            // Create a simplified representation of the tree structure
-            const simplified = { name: tree.name, children: [] };
+            // Create a simplified representation of the tree structure (use id for identification)
+            const simplified = { id: tree.id || '', children: [] };
             if (tree.children && tree.children.length > 0) {
                 tree.children.forEach(child => {
                     simplified.children.push(computeTreeHash(child));
                 });
             }
-            // Sort children by name for consistent hashing
-            simplified.children.sort((a, b) => a.name.localeCompare(b.name));
+            // Sort children by id for consistent hashing
+            simplified.children.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
             return JSON.stringify(simplified);
         }
         
@@ -1064,47 +1064,13 @@ if (typeof window !== 'undefined') {
         
         // Shuffle function that ensures trees with same structure are at least 3 positions apart
         function shuffleArrayWithMinDistance(array, getKeyFunc, minDistance = 3) {
-            if (!getKeyFunc || minDistance <= 0) {
-                return shuffleArray(array);
+            // 使用 Fisher-Yates 打乱算法
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(poolRandom() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
-            
-            const result = [];
-            const remaining = [...array];
-            const keyLastIndex = {}; // Track last index of each key
-            
-            while (remaining.length > 0) {
-                // Find candidates that can be placed now (their key hasn't appeared too recently)
-                let candidates = remaining.filter((item, idx) => {
-                    const key = getKeyFunc(item);
-                    if (!key) return true; // No key means always allowed
-                    const lastIndex = keyLastIndex[key];
-                    if (lastIndex === undefined) return true; // First occurrence
-                    return (result.length - lastIndex) >= minDistance;
-                });
-                
-                // If no candidates, we must use something anyway (relax constraint)
-                if (candidates.length === 0) {
-                    candidates = remaining;
-                }
-                
-                // Randomly select from candidates
-                const randIdx = Math.floor(poolRandom() * candidates.length);
-                const selected = candidates[randIdx];
-                
-                // Find and remove from remaining array
-                const originalIdx = remaining.indexOf(selected);
-                remaining.splice(originalIdx, 1);
-                
-                // Record the position of this item's key
-                const key = getKeyFunc(selected);
-                if (key) {
-                    keyLastIndex[key] = result.length;
-                }
-                
-                result.push(selected);
-            }
-            
-            return result;
+            return shuffled;
         }
         
         // Pre-generate fixed tree structures and marked nodes
@@ -1229,14 +1195,166 @@ if (typeof window !== 'undefined') {
             };
         });
         
-        // Fisher-Yates shuffle
-        function shuffleArray(array) {
-            const shuffled = [...array];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        // ================================================================
+        // 生成满足最小间隔约束的任务序列
+        // ================================================================
+        
+        /**
+         * 生成满足最小间隔约束的任务序列
+         * @param {Array} trees - 树结构列表，每个对象包含 treeId 和 structureHash
+         * @param {Array} strategies - 策略列表
+         * @param {number} minDistance - 最小间隔（默认3）
+         * @returns {Array} 打乱后的任务队列
+         */
+        function generateConstrainedTaskQueue(trees, strategies, minDistance = 3) {
+            // 1. 为每个树结构生成4个任务（每种策略一个）
+            let allTasks = [];
+            trees.forEach(tree => {
+                strategies.forEach(strategy => {
+                    allTasks.push({
+                        treeId: tree.id,
+                        treeHash: tree.treeHash, // 用于识别相同结构
+                        strategy: strategy,
+                        // 添加唯一标识便于调试
+                        taskId: `${tree.id}_${strategy}`
+                    });
+                });
+            });
+            
+            console.log(`[TaskGen] 初始任务数: ${allTasks.length}`);
+            
+            // 2. 按树结构分组
+            const tasksByHash = {};
+            allTasks.forEach(task => {
+                const hash = task.treeHash || task.treeId; // 如果没有hash，用treeId代替
+                if (!tasksByHash[hash]) tasksByHash[hash] = [];
+                tasksByHash[hash].push(task);
+            });
+            
+            // 3. 使用贪心算法构建满足间隔约束的序列
+            const result = [];
+            const hashLastPos = {}; // 记录每种树结构上次出现的位置
+            
+            // 可用任务池
+            let availableTasks = [...allTasks];
+            
+            // 最大尝试次数，防止死循环
+            const MAX_ATTEMPTS = 10000;
+            let attempts = 0;
+            
+            while (availableTasks.length > 0 && attempts < MAX_ATTEMPTS) {
+                attempts++;
+                
+                // 找出当前可用的任务（满足间隔约束）
+                const eligibleTasks = availableTasks.filter(task => {
+                    const hash = task.treeHash || task.treeId;
+                    const lastPos = hashLastPos[hash];
+                    // 如果从未出现过，或者间隔 >= minDistance
+                    return lastPos === undefined || (result.length - lastPos) >= minDistance;
+                });
+                
+                if (eligibleTasks.length === 0) {
+                    // 如果没有可用任务，说明约束太严格，需要放宽
+                    // 策略：选择距离当前位置最远的任务
+                    console.warn('[TaskGen] 约束过严，放宽选择');
+                    
+                    // 计算每个任务的距离
+                    const tasksWithDistance = availableTasks.map(task => {
+                        const hash = task.treeHash || task.treeId;
+                        const lastPos = hashLastPos[hash];
+                        const distance = lastPos === undefined ? Infinity : result.length - lastPos;
+                        return { task, distance };
+                    });
+                    
+                    // 选择距离最大的任务（即最久没出现的）
+                    tasksWithDistance.sort((a, b) => b.distance - a.distance);
+                    const selected = tasksWithDistance[0].task;
+                    
+                    // 移除选中的任务
+                    const index = availableTasks.findIndex(t => 
+                        t.treeId === selected.treeId && t.strategy === selected.strategy
+                    );
+                    availableTasks.splice(index, 1);
+                    
+                    // 添加到结果
+                    result.push(selected);
+                    
+                    // 更新位置
+                    hashLastPos[selected.treeHash || selected.treeId] = result.length - 1;
+                } else {
+                    // 从可用任务中随机选择一个
+                    const randomIndex = Math.floor(poolRandom() * eligibleTasks.length);
+                    const selected = eligibleTasks[randomIndex];
+                    
+                    // 从 availableTasks 中移除
+                    const index = availableTasks.findIndex(t => 
+                        t.treeId === selected.treeId && t.strategy === selected.strategy
+                    );
+                    availableTasks.splice(index, 1);
+                    
+                    // 添加到结果
+                    result.push(selected);
+                    
+                    // 更新位置
+                    hashLastPos[selected.treeHash || selected.treeId] = result.length - 1;
+                }
             }
-            return shuffled;
+            
+            console.log(`[TaskGen] 最终序列长度: ${result.length}`);
+            
+            // 验证间隔约束
+            validateConstraints(result, minDistance);
+            
+            return result;
+        }
+        
+        /**
+         * 验证序列是否满足间隔约束
+         */
+        function validateConstraints(taskQueue, minDistance) {
+            console.log('========================================');
+            console.log('[TaskGen] 验证任务序列间隔约束...');
+            console.log(`[TaskGen] 任务总数: ${taskQueue.length}`);
+            console.log(`[TaskGen] 最小间隔要求: ${minDistance}`);
+            
+            const positionsByHash = {};
+            let allValid = true;
+            const violations = [];
+            
+            taskQueue.forEach((task, index) => {
+                const hash = task.treeHash || task.treeId;
+                if (!positionsByHash[hash]) positionsByHash[hash] = [];
+                positionsByHash[hash].push(index);
+            });
+            
+            console.log(`[TaskGen] 不同树结构数量: ${Object.keys(positionsByHash).length}`);
+            
+
+
+            for (const [hash, positions] of Object.entries(positionsByHash)) {
+                if (positions.length > 1) {
+                    console.log(`[TaskGen] : 出现 ${positions.length} 次，位置 = [${positions.join(', ')}]`);
+                    
+                    for (let i = 1; i < positions.length; i++) {
+                        const gap = positions[i] - positions[i - 1] - 1; // 间隔的任务数
+                        if (gap < minDistance) {
+                            console.warn(`[TaskGen] ❌ 约束违反: 在位置 ${positions[i-1]} 和 ${positions[i]}, 间隔=${gap} < ${minDistance}`);
+                            violations.push({ hash, pos1: positions[i-1], pos2: positions[i], gap });
+                            allValid = false;
+                        }
+                    }
+                }
+            }
+            
+            console.log('----------------------------------------');
+            if (allValid) {
+                console.log('[TaskGen] ✅ 验证通过: 所有任务满足3间隔约束');
+            } else {
+                console.log(`[TaskGen] ❌ 验证失败: 发现 ${violations.length} 处违反约束`);
+            }
+            console.log('========================================');
+            
+            return allValid;
         }
         
         // Start experiment
@@ -1393,20 +1511,19 @@ if (typeof window !== 'undefined') {
                     console.log(`[Tree Pool] Loaded ${Object.keys(fixedTrees).length} trees with marked nodes`);
                     
                     // Generate task queue: 12 trees × 4 strategies = 48 tasks
+                    // 使用带间隔约束的任务生成函数
                     const strategyValues = alignmentStrategies.map(s => s.value);
-                    const queue = [];
-                    selectedTreeIds.forEach(treeId => {
-                        strategyValues.forEach(strategy => {
-                            queue.push({
-                                treeId: treeId,
-                                strategy: strategy,
-                                isPractice: false
-                            });
-                        });
+                    taskQueue = generateConstrainedTaskQueue(
+                        selectedCandidateData,
+                        strategyValues,
+                        3 // 最小间隔：相同树结构的任务至少相隔3个位置
+                    );
+                    
+                    // 为每个任务添加 isPractice 标记
+                    taskQueue.forEach(task => {
+                        task.isPractice = false;
                     });
                     
-                    // Shuffle task order
-                    taskQueue = shuffleArray(queue);
                     currentTaskIndex = 0;
                     
                     // Update button text
@@ -1759,7 +1876,7 @@ if (typeof window !== 'undefined') {
             const offsetX = padding - minX * scaleX;
             const offsetY = padding - minY * scaleY;
             const n = layoutResult.metrics?.nodeCount || 0;
-            const nodeR = n >= 500 ? 5 : n >= 300 ? 6 : 10;
+            const nodeR = n >= 400 ? 4 : n >= 200 ? 5 : 6;
 
             console.log('Layout params:', {
                 minX, maxX, minY, maxY,
@@ -1888,21 +2005,24 @@ if (typeof window !== 'undefined') {
             experimentResults.push(result);
             updateResultsTable();
             
-            // Show result
-            setTimeout(() => {
-                alert(isCorrect ? 
-                    `✅ Correct! LCA is node ${correctAnswer}. Time: ${timeSpent} seconds.` :
-                    `❌ Incorrect. The correct answer is node ${correctAnswer}, you selected node ${userAnswer}. Time: ${timeSpent} seconds.`
-                );
-                
-                // Move to next task - increment the correct index based on mode
-                if (isPracticeMode) {
+            // Show result only for practice tasks, skip for formal tasks
+            if (isPracticeMode) {
+                // Show result for practice tasks
+                setTimeout(() => {
+                    alert(isCorrect ? 
+                        `✅ Correct! LCA is node ${correctAnswer}. Time: ${timeSpent} seconds.` :
+                        `❌ Incorrect. The correct answer is node ${correctAnswer}, you selected node ${userAnswer}. Time: ${timeSpent} seconds.`
+                    );
+                    
+                    // Move to next task
                     practiceTaskIndex++;
-                } else {
-                    currentTaskIndex++;
-                }
+                    loadNextTask();
+                }, 100);
+            } else {
+                // Skip alert for formal tasks, directly move to next task
+                currentTaskIndex++;
                 loadNextTask();
-            }, 500);
+            }
         }
         
         // Highlight marked leaf nodes with red circles
