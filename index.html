@@ -1064,13 +1064,45 @@ if (typeof window !== 'undefined') {
         
         // Shuffle function that ensures trees with same structure are at least 3 positions apart
         function shuffleArrayWithMinDistance(array, getKeyFunc, minDistance = 3) {
-            // 使用 Fisher-Yates 打乱算法
-            const shuffled = [...array];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(poolRandom() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            // 使用带约束的打乱算法
+            const result = [];
+            const keyLastPos = {};
+            const remaining = [...array];
+            
+            while (remaining.length > 0) {
+                // 找出当前可用的任务（满足间隔约束）
+                const eligible = remaining.filter((item, idx) => {
+                    const key = getKeyFunc(item);
+                    const lastPos = keyLastPos[key];
+                    return lastPos === undefined || (result.length - lastPos) >= minDistance;
+                });
+                
+                if (eligible.length === 0) {
+                    // 没有可用项，取距离最远的
+                    const withDistance = remaining.map((item, idx) => {
+                        const key = getKeyFunc(item);
+                        const lastPos = keyLastPos[key];
+                        const distance = lastPos === undefined ? Infinity : result.length - lastPos;
+                        return { item, distance };
+                    });
+                    withDistance.sort((a, b) => b.distance - a.distance);
+                    const selected = withDistance[0].item;
+                    const idx = remaining.indexOf(selected);
+                    remaining.splice(idx, 1);
+                    result.push(selected);
+                    keyLastPos[getKeyFunc(selected)] = result.length - 1;
+                } else {
+                    // 随机选择
+                    const randomIdx = Math.floor(Math.random() * eligible.length);
+                    const selected = eligible[randomIdx];
+                    const idx = remaining.indexOf(selected);
+                    remaining.splice(idx, 1);
+                    result.push(selected);
+                    keyLastPos[getKeyFunc(selected)] = result.length - 1;
+                }
             }
-            return shuffled;
+            
+            return result;
         }
         
         // Pre-generate fixed tree structures and marked nodes
@@ -1213,9 +1245,7 @@ if (typeof window !== 'undefined') {
                 strategies.forEach(strategy => {
                     allTasks.push({
                         treeId: tree.id,
-                        treeHash: tree.treeHash, // 用于识别相同结构
                         strategy: strategy,
-                        // 添加唯一标识便于调试
                         taskId: `${tree.id}_${strategy}`
                     });
                 });
@@ -1223,80 +1253,41 @@ if (typeof window !== 'undefined') {
             
             console.log(`[TaskGen] 初始任务数: ${allTasks.length}`);
             
-            // 2. 按树结构分组
-            const tasksByHash = {};
-            allTasks.forEach(task => {
-                const hash = task.treeHash || task.treeId; // 如果没有hash，用treeId代替
-                if (!tasksByHash[hash]) tasksByHash[hash] = [];
-                tasksByHash[hash].push(task);
-            });
-            
-            // 3. 使用贪心算法构建满足间隔约束的序列
+            // 2. 使用带约束的打乱算法（与 shuffleArrayWithMinDistance 相同）
             const result = [];
-            const hashLastPos = {}; // 记录每种树结构上次出现的位置
+            const treeIdLastPos = {};
+            const remaining = [...allTasks];
             
-            // 可用任务池
-            let availableTasks = [...allTasks];
-            
-            // 最大尝试次数，防止死循环
-            const MAX_ATTEMPTS = 10000;
-            let attempts = 0;
-            
-            while (availableTasks.length > 0 && attempts < MAX_ATTEMPTS) {
-                attempts++;
-                
+            while (remaining.length > 0) {
                 // 找出当前可用的任务（满足间隔约束）
-                const eligibleTasks = availableTasks.filter(task => {
-                    const hash = task.treeHash || task.treeId;
-                    const lastPos = hashLastPos[hash];
-                    // 如果从未出现过，或者间隔 >= minDistance
+                const eligible = remaining.filter(task => {
+                    const treeId = task.treeId;
+                    const lastPos = treeIdLastPos[treeId];
                     return lastPos === undefined || (result.length - lastPos) >= minDistance;
                 });
                 
-                if (eligibleTasks.length === 0) {
-                    // 如果没有可用任务，说明约束太严格，需要放宽
-                    // 策略：选择距离当前位置最远的任务
-                    console.warn('[TaskGen] 约束过严，放宽选择');
-                    
-                    // 计算每个任务的距离
-                    const tasksWithDistance = availableTasks.map(task => {
-                        const hash = task.treeHash || task.treeId;
-                        const lastPos = hashLastPos[hash];
+                if (eligible.length === 0) {
+                    // 没有可用项，取距离最远的
+                    const withDistance = remaining.map(task => {
+                        const treeId = task.treeId;
+                        const lastPos = treeIdLastPos[treeId];
                         const distance = lastPos === undefined ? Infinity : result.length - lastPos;
                         return { task, distance };
                     });
-                    
-                    // 选择距离最大的任务（即最久没出现的）
-                    tasksWithDistance.sort((a, b) => b.distance - a.distance);
-                    const selected = tasksWithDistance[0].task;
-                    
-                    // 移除选中的任务
-                    const index = availableTasks.findIndex(t => 
-                        t.treeId === selected.treeId && t.strategy === selected.strategy
-                    );
-                    availableTasks.splice(index, 1);
-                    
-                    // 添加到结果
+                    withDistance.sort((a, b) => b.distance - a.distance);
+                    const selected = withDistance[0].task;
+                    const idx = remaining.indexOf(selected);
+                    remaining.splice(idx, 1);
                     result.push(selected);
-                    
-                    // 更新位置
-                    hashLastPos[selected.treeHash || selected.treeId] = result.length - 1;
+                    treeIdLastPos[selected.treeId] = result.length - 1;
                 } else {
-                    // 从可用任务中随机选择一个
-                    const randomIndex = Math.floor(poolRandom() * eligibleTasks.length);
-                    const selected = eligibleTasks[randomIndex];
-                    
-                    // 从 availableTasks 中移除
-                    const index = availableTasks.findIndex(t => 
-                        t.treeId === selected.treeId && t.strategy === selected.strategy
-                    );
-                    availableTasks.splice(index, 1);
-                    
-                    // 添加到结果
+                    // 随机选择
+                    const randomIdx = Math.floor(poolRandom() * eligible.length);
+                    const selected = eligible[randomIdx];
+                    const idx = remaining.indexOf(selected);
+                    remaining.splice(idx, 1);
                     result.push(selected);
-                    
-                    // 更新位置
-                    hashLastPos[selected.treeHash || selected.treeId] = result.length - 1;
+                    treeIdLastPos[selected.treeId] = result.length - 1;
                 }
             }
             
@@ -1312,53 +1303,46 @@ if (typeof window !== 'undefined') {
          * 验证序列是否满足间隔约束
          */
         function validateConstraints(taskQueue, minDistance) {
-            console.log('========================================');
-            console.log('[TaskGen] 验证任务序列间隔约束...');
-            console.log(`[TaskGen] 任务总数: ${taskQueue.length}`);
-            console.log(`[TaskGen] 最小间隔要求: ${minDistance}`);
+            console.log('[TaskGen] 验证间隔约束: ' + taskQueue.length + '任务, ' + minDistance + '最小间隔');
             
-            const positionsByHash = {};
+            const positionsByTreeId = {};
             let allValid = true;
             const violations = [];
             
+            // 使用 treeId 追踪位置
             taskQueue.forEach((task, index) => {
-                const hash = task.treeHash || task.treeId;
-                if (!positionsByHash[hash]) positionsByHash[hash] = [];
-                positionsByHash[hash].push(index);
+                const treeId = task.treeId;
+                if (!positionsByTreeId[treeId]) positionsByTreeId[treeId] = [];
+                positionsByTreeId[treeId].push(index);
             });
             
-            console.log(`[TaskGen] 不同树结构数量: ${Object.keys(positionsByHash).length}`);
-            
-
-
-            for (const [hash, positions] of Object.entries(positionsByHash)) {
+            for (const [treeId, positions] of Object.entries(positionsByTreeId)) {
                 if (positions.length > 1) {
-                    console.log(`[TaskGen] : 出现 ${positions.length} 次，位置 = [${positions.join(', ')}]`);
-                    
                     for (let i = 1; i < positions.length; i++) {
-                        const gap = positions[i] - positions[i - 1] - 1; // 间隔的任务数
+                        const gap = positions[i] - positions[i - 1] - 1;
                         if (gap < minDistance) {
-                            console.warn(`[TaskGen] ❌ 约束违反: 在位置 ${positions[i-1]} 和 ${positions[i]}, 间隔=${gap} < ${minDistance}`);
-                            violations.push({ hash, pos1: positions[i-1], pos2: positions[i], gap });
+                            console.warn(`[TaskGen] ❌ 违反: treeId=${treeId}, 位置${positions[i-1]}和${positions[i]}, 间隔=${gap}<${minDistance}`);
+                            violations.push({ treeId, pos1: positions[i-1], pos2: positions[i], gap });
                             allValid = false;
                         }
                     }
                 }
             }
             
-            console.log('----------------------------------------');
             if (allValid) {
-                console.log('[TaskGen] ✅ 验证通过: 所有任务满足3间隔约束');
+                console.log('[TaskGen] ✅ 验证通过');
             } else {
-                console.log(`[TaskGen] ❌ 验证失败: 发现 ${violations.length} 处违反约束`);
+                console.log(`[TaskGen] ❌ 失败: ${violations.length}处违反`);
             }
-            console.log('========================================');
             
             return allValid;
         }
         
         // Start experiment
         async function startExperiment() {
+            // 设置基于时间的随机种子，让每次实验有不同的树选择
+            poolSeed = Date.now() % 233280;
+            
             // First, load tree pool data from JSON
             const poolLoaded = await loadTreePoolData();
             if (!poolLoaded) {
