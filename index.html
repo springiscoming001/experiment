@@ -359,7 +359,7 @@
             </div>
             <div class="task-status" id="taskStatus">
                 <div class="status-item">Status: Waiting to start</div>
-                <div class="status-item">Time elapsed: <span id="taskTime">0</span> seconds</div>
+                <div class="status-item">Time elapsed: <span id="taskTime">0.0</span> seconds</div>
             </div>
         </div>
         
@@ -393,7 +393,6 @@
                 </tbody>
             </table>
             <button class="export-btn" id="exportBtn">Export Results (CSV)</button>
-            <button class="export-btn" id="exportPoolBtn" style="background: #28a745; margin-left: 10px;">Export Tree Pool (JSON)</button>
         </div>
     </div>
     
@@ -913,6 +912,92 @@ if (typeof window !== 'undefined') {
         let currentTaskIndex = 0;
         let isExperimentRunning = false;
         
+        // Practice mode variables
+        let isPracticeMode = false;
+        let practiceQueue = [];
+        let practiceTaskIndex = 0;
+        
+        // Practice trees - simple small trees for learning
+        const practiceTrees = [
+            {
+                id: 'practice_1',
+                name: 'Practice Tree 1',
+                children: [
+                    {
+                        id: 'p1_root',
+                        name: 'Root',
+                        children: [
+                            { id: 'p1_a', name: 'A', children: [] },
+                            { id: 'p1_b', name: 'B', children: [
+                                { id: 'p1_b1', name: 'B1', children: [] },
+                                { id: 'p1_b2', name: 'B2', children: [] }
+                            ]}
+                        ]
+                    }
+                ]
+            },
+            {
+                id: 'practice_2',
+                name: 'Practice Tree 2',
+                children: [
+                    {
+                        id: 'p2_root',
+                        name: 'Root',
+                        children: [
+                            { id: 'p2_a', name: 'A', children: [
+                                { id: 'p2_a1', name: 'A1', children: [] }
+                            ]},
+                            { id: 'p2_b', name: 'B', children: [] },
+                            { id: 'p2_c', name: 'C', children: [
+                                { id: 'p2_c1', name: 'C1', children: [] },
+                                { id: 'p2_c2', name: 'C2', children: [] }
+                            ]}
+                        ]
+                    }
+                ]
+            },
+            {
+                id: 'practice_3',
+                name: 'Practice Tree 3',
+                children: [
+                    {
+                        id: 'p3_root',
+                        name: 'Root',
+                        children: [
+                            { id: 'p3_a', name: 'A', children: [] },
+                            { id: 'p3_b', name: 'B', children: [] },
+                            { id: 'p3_c', name: 'C', children: [] }
+                        ]
+                    }
+                ]
+            }
+        ];
+        
+        // Pre-defined marked nodes for practice trees
+        const practiceMarkedNodes = {
+            'practice_1': ['p1_a', 'p1_b1'],
+            'practice_2': ['p2_a1', 'p2_c1'],
+            'practice_3': ['p3_a', 'p3_b']
+        };
+        
+        // Load tree pool data from external JSON file
+        let treePoolData = null;
+        
+        async function loadTreePoolData() {
+            try {
+                const response = await fetch('tree_pool_data.json');
+                if (!response.ok) {
+                    throw new Error('Failed to load tree_pool_data.json');
+                }
+                treePoolData = await response.json();
+                console.log('Tree pool data loaded:', treePoolData);
+                return true;
+            } catch (error) {
+                console.error('Error loading tree pool data:', error);
+                return false;
+            }
+        }
+        
         // Alignment strategies
         const alignmentStrategies = [
             { value: 'midpoint', label: 'midpoint - Child node midpoint' },
@@ -921,20 +1006,105 @@ if (typeof window !== 'undefined') {
             { value: 'weightedSquared', label: 'weightedSquared - Minimize weighted squared distance' }
         ];
         
-        // Candidate tree data - dynamically generated 100 trees
-        const candidateTreesData = [];
+        // Candidate tree data - will be populated after treePoolData is loaded
+        let candidateTreesData = [];
         
-        // Generate 100 trees with random sizes between 200-500 (using fixed seed)
-        for (let i = 0; i < 100; i++) {
-            const treeSize = poolRandomInt(200, 500); // 200-500 nodes
-            candidateTreesData.push({
-                id: `candidate_${i + 1}`,
-                name: `Tree #${i + 1} - ${treeSize} nodes`,
-                treeSize: treeSize,
-                treeIndex: i,
-                maxImprovement: 40 + poolRandom() * 5, // Random improvement 40-45%
-                betterStrategies: ["midZ", "midDepthZ", "weightedSquared", "midpoint"]
-            });
+        // Function to compute a simple hash for tree structure (for detecting duplicate structures)
+        function computeTreeHash(tree) {
+            // Create a simplified representation of the tree structure
+            const simplified = { name: tree.name, children: [] };
+            if (tree.children && tree.children.length > 0) {
+                tree.children.forEach(child => {
+                    simplified.children.push(computeTreeHash(child));
+                });
+            }
+            // Sort children by name for consistent hashing
+            simplified.children.sort((a, b) => a.name.localeCompare(b.name));
+            return JSON.stringify(simplified);
+        }
+        
+        // Function to initialize candidateTreesData from treePoolData
+        function initializeCandidateTreesData() {
+            if (treePoolData && treePoolData.trees && treePoolData.trees.length > 0) {
+                candidateTreesData = [];
+                treePoolData.trees.forEach((treeInfo, index) => {
+                    // Compute hash for tree structure (to detect duplicates)
+                    let treeHash = null;
+                    if (treeInfo.tree) {
+                        treeHash = computeTreeHash(treeInfo.tree);
+                    }
+                    
+                    candidateTreesData.push({
+                        id: treeInfo.treeId,
+                        name: `Tree #${index + 1} - ${treeInfo.treeSize} nodes`,
+                        treeSize: treeInfo.treeSize,
+                        treeIndex: index,
+                        treeHash: treeHash, // Store tree structure hash
+                        maxImprovement: 40 + poolRandom() * 5,
+                        betterStrategies: ["midZ", "midDepthZ", "weightedSquared", "midpoint"]
+                    });
+                });
+                console.log(`[Tree Pool] Using ${candidateTreesData.length} trees from JSON`);
+            } else {
+                // Fallback: generate 100 trees with random sizes between 200-500 (using fixed seed)
+                for (let i = 0; i < 100; i++) {
+                    const treeSize = poolRandomInt(200, 500); // 200-500 nodes
+                    candidateTreesData.push({
+                        id: `candidate_${i + 1}`,
+                        name: `Tree #${i + 1} - ${treeSize} nodes`,
+                        treeSize: treeSize,
+                        treeIndex: i,
+                        treeHash: null, // Each random tree is unique
+                        maxImprovement: 40 + poolRandom() * 5, // Random improvement 40-45%
+                        betterStrategies: ["midZ", "midDepthZ", "weightedSquared", "midpoint"]
+                    });
+                }
+            }
+        }
+        
+        // Shuffle function that ensures trees with same structure are at least 3 positions apart
+        function shuffleArrayWithMinDistance(array, getKeyFunc, minDistance = 3) {
+            if (!getKeyFunc || minDistance <= 0) {
+                return shuffleArray(array);
+            }
+            
+            const result = [];
+            const remaining = [...array];
+            const keyLastIndex = {}; // Track last index of each key
+            
+            while (remaining.length > 0) {
+                // Find candidates that can be placed now (their key hasn't appeared too recently)
+                let candidates = remaining.filter((item, idx) => {
+                    const key = getKeyFunc(item);
+                    if (!key) return true; // No key means always allowed
+                    const lastIndex = keyLastIndex[key];
+                    if (lastIndex === undefined) return true; // First occurrence
+                    return (result.length - lastIndex) >= minDistance;
+                });
+                
+                // If no candidates, we must use something anyway (relax constraint)
+                if (candidates.length === 0) {
+                    candidates = remaining;
+                }
+                
+                // Randomly select from candidates
+                const randIdx = Math.floor(poolRandom() * candidates.length);
+                const selected = candidates[randIdx];
+                
+                // Find and remove from remaining array
+                const originalIdx = remaining.indexOf(selected);
+                remaining.splice(originalIdx, 1);
+                
+                // Record the position of this item's key
+                const key = getKeyFunc(selected);
+                if (key) {
+                    keyLastIndex[key] = result.length;
+                }
+                
+                result.push(selected);
+            }
+            
+            return result;
         }
         
         // Pre-generate fixed tree structures and marked nodes
@@ -1070,65 +1240,48 @@ if (typeof window !== 'undefined') {
         }
         
         // Start experiment
-        function startExperiment() {
-            // Only generate tree pool once (fixed for all users)
-            if (!poolInitialized) {
-                fixedTrees = {};
-                fixedMarkedNodes = {};
-                candidateTreesData.forEach(candidate => {
-                    const size = candidate.treeSize;
-                    const maxBranching = size >= 200 ? 8 : 20;
-                    fixedTrees[candidate.id] = generateTreeBA1(size, 10, maxBranching);
-                    
-                    // Pre-generate 6 fixed marked leaf nodes for each tree
-                    const tree = fixedTrees[candidate.id];
-                    const leafNodes = [];
-                    function collectLeafNodes(node) {
-                        if (!node.children || node.children.length === 0) {
-                            leafNodes.push(node);
-                        } else {
-                            node.children.forEach(collectLeafNodes);
-                        }
-                    }
-                    collectLeafNodes(tree);
-                    
-                    // Use poolShuffle for fixed marked nodes
-                    const shuffledLeaves = poolShuffle(leafNodes);
-                    fixedMarkedNodes[candidate.id] = shuffledLeaves.slice(0, 6).map(n => n.id);
-                });
-                poolInitialized = true;
+        async function startExperiment() {
+            // First, load tree pool data from JSON
+            const poolLoaded = await loadTreePoolData();
+            if (!poolLoaded) {
+                alert('Failed to load tree_pool_data.json. Please ensure the file exists and is accessible.');
+                return;
             }
             
-            // Randomly select 12 trees for this experiment session (uses regular random)
-            const selectedTreeIds = shuffleArray(candidateTreesData.map(c => c.id)).slice(0, 12);
+            // Initialize candidateTreesData from loaded JSON
+            initializeCandidateTreesData();
             
-            // Generate task queue: 12 trees × 4 strategies = 48 tasks
-            const strategyValues = alignmentStrategies.map(s => s.value);
-            const queue = [];
-            selectedTreeIds.forEach(treeId => {
-                strategyValues.forEach(strategy => {
-                    queue.push({
-                        treeId: treeId,
-                        strategy: strategy
-                    });
+            // First, start with practice tasks
+            isPracticeMode = true;
+            
+            // Generate practice task queue (2-3 practice tasks with different strategies)
+            const practiceStrategies = ['midpoint', 'midZ', 'midDepthZ'];
+            practiceQueue = [];
+            practiceTrees.forEach((tree, index) => {
+                practiceQueue.push({
+                    treeId: tree.id,
+                    strategy: practiceStrategies[index % practiceStrategies.length],
+                    isPractice: true
                 });
             });
+            practiceTaskIndex = 0;
             
-            // Shuffle task order
-            taskQueue = shuffleArray(queue);
+            // Initialize experiment variables
             currentTaskIndex = 0;
             experimentResults = [];
             taskCounter = 0;
             isExperimentRunning = true;
             
-            // Update progress display
-            updateProgressDisplay();
+            // Update progress display for practice
+            document.getElementById('progressDisplay').textContent = `Practice ${practiceTaskIndex + 1} / ${practiceQueue.length}`;
+            document.getElementById('taskInstruction').innerHTML = 
+                '<strong>Practice Phase:</strong> This is a practice round to help you understand the task. Click the <strong>LCA</strong> (Lowest Common Ancestor) of the two highlighted nodes.';
             
             // Disable start button
             document.getElementById('startExperimentBtn').disabled = true;
-            document.getElementById('startExperimentBtn').textContent = 'Experiment Running...';
+            document.getElementById('startExperimentBtn').textContent = 'Practice in Progress...';
             
-            // Start first task
+            // Start first practice task
             loadNextTask();
         }
         
@@ -1136,6 +1289,172 @@ if (typeof window !== 'undefined') {
         function loadNextTask() {
             if (!isExperimentRunning) return;
             
+            // Check if we need to switch from practice to real experiment
+            if (isPracticeMode && practiceTaskIndex >= practiceQueue.length) {
+                // Transition from practice to real experiment
+                isPracticeMode = false;
+                
+                // Generate the actual experiment tasks
+                if (!poolInitialized) {
+                    fixedTrees = {};
+                    fixedMarkedNodes = {};
+                    
+                    // Randomly select 24 trees with constraint: same structure trees at least 3 apart
+                    const shuffledCandidates = shuffleArrayWithMinDistance(
+                        candidateTreesData,
+                        c => c.treeHash, // Use treeHash to identify same structures
+                        3 // minimum distance between same structure trees
+                    );
+                    const selectedCandidateData = shuffledCandidates.slice(0, 24);
+                    const selectedTreeIds = selectedCandidateData.map(c => c.id);
+                    console.log(`[Tree Pool] Selected 24 trees: ${selectedTreeIds.join(', ')}`);
+                    
+                    // Determine which trees should have non-root LCA (70% of selected trees)
+                    const numNonRootLca = Math.floor(selectedCandidateData.length * 0.70);
+                    const treeIndices = Array.from({length: selectedCandidateData.length}, (_, i) => i);
+                    // Use poolShuffle for deterministic assignment
+                    const shuffledIndices = poolShuffle(treeIndices);
+                    const nonRootLcaIndices = new Set(shuffledIndices.slice(0, numNonRootLca));
+                    
+                    console.log(`[LCA Constraint] Target: ${numNonRootLca} trees with non-root LCA, ${selectedCandidateData.length - numNonRootLca} trees with root LCA`);
+                    
+                    // Helper function to add parent references to tree
+                    function addParentReferences(node, parent = null) {
+                        node.parent = parent;
+                        if (node.children && node.children.length > 0) {
+                            node.children.forEach(child => addParentReferences(child, node));
+                        }
+                        return node;
+                    }
+                    
+                    // Generate trees and marked nodes for selected trees only
+                    selectedCandidateData.forEach((candidate, index) => {
+                        const size = candidate.treeSize;
+                        
+                        // Check if we have full tree structure from treePoolData
+                        const jsonTree = treePoolData?.trees?.find(t => t.treeId === candidate.id);
+                        if (jsonTree && jsonTree.tree) {
+                            // Use the pre-generated tree structure from JSON
+                            const treeCopy = JSON.parse(JSON.stringify(jsonTree.tree));
+                            fixedTrees[candidate.id] = addParentReferences(treeCopy);
+                            console.log(`[Tree Pool] Using fixed tree structure for ${candidate.id}`);
+                            
+                            // Use marked nodes from JSON if available
+                            if (jsonTree.markedNodes) {
+                                fixedMarkedNodes[candidate.id] = jsonTree.markedNodes;
+                            }
+                        } else {
+                            // Fallback: generate random tree
+                            const maxBranching = size >= 200 ? 8 : 20;
+                            fixedTrees[candidate.id] = generateTreeBA1(size, 10, maxBranching);
+                            
+                            // Generate marked nodes with constraint
+                            const tree = fixedTrees[candidate.id];
+                            const leafNodes = [];
+                            function collectLeafNodes(node) {
+                                if (!node.children || node.children.length === 0) {
+                                    leafNodes.push(node);
+                                } else {
+                                    node.children.forEach(collectLeafNodes);
+                                }
+                            }
+                            collectLeafNodes(tree);
+                            
+                            // Determine if this tree should have non-root LCA
+                            const shouldBeNonRoot = nonRootLcaIndices.has(index);
+                            
+                            // Keep regenerating until we get desired LCA type
+                            let markedNodes = [];
+                            let lca = null;
+                            let attempts = 0;
+                            const MAX_ATTEMPTS = 100;
+                            
+                            while (attempts < MAX_ATTEMPTS) {
+                                const shuffledLeaves = poolShuffle(leafNodes);
+                                markedNodes = shuffledLeaves.slice(0, 6).map(n => n.id);
+                                lca = findLCAForMultipleNodes(tree, markedNodes);
+                                const isRootLca = (lca.id === tree.id);
+                                
+                                if (shouldBeNonRoot && isRootLca) {
+                                    attempts++;
+                                    continue; // Need non-root, but got root - try again
+                                }
+                                break; // Got what we need
+                            }
+                            
+                            fixedMarkedNodes[candidate.id] = markedNodes;
+                            
+                            if (attempts >= MAX_ATTEMPTS && shouldBeNonRoot) {
+                                console.warn(`[LCA Constraint] Tree ${candidate.id} couldn't achieve non-root LCA after ${MAX_ATTEMPTS} attempts`);
+                            }
+                        }
+                    });
+                    
+                    console.log(`[Tree Pool] Loaded ${Object.keys(fixedTrees).length} trees with marked nodes`);
+                    
+                    // Generate task queue: 12 trees × 4 strategies = 48 tasks
+                    const strategyValues = alignmentStrategies.map(s => s.value);
+                    const queue = [];
+                    selectedTreeIds.forEach(treeId => {
+                        strategyValues.forEach(strategy => {
+                            queue.push({
+                                treeId: treeId,
+                                strategy: strategy,
+                                isPractice: false
+                            });
+                        });
+                    });
+                    
+                    // Shuffle task order
+                    taskQueue = shuffleArray(queue);
+                    currentTaskIndex = 0;
+                    
+                    // Update button text
+                    document.getElementById('startExperimentBtn').textContent = 'Experiment Running...';
+                    document.getElementById('taskInstruction').innerHTML = 
+                        '<strong>正式实验开始!</strong> 请点击两个高亮节点的 <strong>LCA</strong> (最近公共祖先)。';
+                    
+                    poolInitialized = true;
+                    
+                    // Load first real task
+                    loadNextTask();
+                    return;
+                }
+            }
+            
+            // Handle practice mode
+            if (isPracticeMode) {
+                if (practiceTaskIndex >= practiceQueue.length) {
+                    // No more practice tasks, transition to real experiment
+                    loadNextTask();
+                    return;
+                }
+                
+                const taskConfig = practiceQueue[practiceTaskIndex];
+                const practiceTree = practiceTrees.find(t => t.id === taskConfig.treeId);
+                
+                currentTree = practiceTree;
+                currentTreeId = taskConfig.treeId;
+                currentStrategy = taskConfig.strategy;
+                
+                // Update task info display for practice
+                const strategyLabel = alignmentStrategies.find(s => s.value === currentStrategy)?.label || currentStrategy;
+                document.getElementById('currentTaskInfo').innerHTML = 
+                    `<span style="color: #f59e0b;">[Practice] ${practiceTree.name}</span><br>` +
+                    `<span style="color: #764ba2;">Strategy: ${strategyLabel}</span>`;
+                
+                // Draw tree
+                drawTree(currentTree, currentStrategy);
+                
+                // Start new task
+                startNewTask();
+                
+                // Update progress
+                document.getElementById('progressDisplay').textContent = `Practice ${practiceTaskIndex + 1} / ${practiceQueue.length}`;
+                return;
+            }
+            
+            // Handle real experiment mode
             if (currentTaskIndex >= taskQueue.length) {
                 finishExperiment();
                 return;
@@ -1167,11 +1486,26 @@ if (typeof window !== 'undefined') {
         
         // Update progress display
         function updateProgressDisplay() {
-            const total = taskQueue.length;
-            const current = isExperimentRunning ? currentTaskIndex + 1 : 0;
-            console.log(`[Progress] currentTaskIndex=${currentTaskIndex}, current=${current}, total=${total}, running=${isExperimentRunning}`);
-            document.getElementById('progressDisplay').textContent = 
-                `Task ${current} / ${total}`;
+            let displayText;
+            if (isPracticeMode) {
+                displayText = `Practice ${practiceTaskIndex + 1} / ${practiceQueue.length}`;
+            } else {
+                const total = taskQueue.length;
+                const current = isExperimentRunning ? currentTaskIndex + 1 : 0;
+                displayText = `Task ${current} / ${total}`;
+            }
+            console.log(`[Progress] practiceMode=${isPracticeMode}, practiceIndex=${practiceTaskIndex}, taskIndex=${currentTaskIndex}, display=${displayText}`);
+            document.getElementById('progressDisplay').textContent = displayText;
+        }
+        
+        // Helper function to remove parent references from tree nodes
+        function removeParentReferences(node) {
+            if (node.parent) {
+                delete node.parent;
+            }
+            if (node.children) {
+                node.children.forEach(child => removeParentReferences(child));
+            }
         }
         
         // Finish experiment
@@ -1182,11 +1516,14 @@ if (typeof window !== 'undefined') {
             document.getElementById('startExperimentBtn').disabled = false;
             document.getElementById('startExperimentBtn').textContent = 'Restart Experiment';
             
+            // Filter out practice results
+            const realResults = experimentResults.filter(r => !r.isPractice);
+            
             // Calculate statistics
-            const totalTasks = experimentResults.length;
-            const correctTasks = experimentResults.filter(r => r.isCorrect).length;
+            const totalTasks = realResults.length;
+            const correctTasks = realResults.filter(r => r.isCorrect).length;
             const accuracy = totalTasks > 0 ? ((correctTasks / totalTasks) * 100).toFixed(1) : 0;
-            const avgTime = totalTasks > 0 ? (experimentResults.reduce((sum, r) => sum + r.timeSpent, 0) / totalTasks).toFixed(1) : 0;
+            const avgTime = totalTasks > 0 ? (realResults.reduce((sum, r) => sum + r.timeSpent, 0) / totalTasks).toFixed(1) : 0;
             
             // Display completion message
             setTimeout(() => {
@@ -1217,6 +1554,32 @@ if (typeof window !== 'undefined') {
         
         // LCA task generator - randomly marks 3, 6, or 9 leaf nodes
         function generateLCATask(tree, treeId) {
+            // Check if this is a practice tree
+            if (treeId.startsWith('practice_')) {
+                const practiceMarked = practiceMarkedNodes[treeId] || [];
+                
+                // Create node ID to node object mapping
+                const nodeMap = {};
+                function buildNodeMap(node) {
+                    nodeMap[node.id] = node;
+                    if (node.children) {
+                        node.children.forEach(buildNodeMap);
+                    }
+                }
+                buildNodeMap(tree);
+                
+                const selectedLeaves = practiceMarked.map(id => nodeMap[id]).filter(n => n !== undefined);
+                const lca = findLCAForMultipleNodes(tree, selectedLeaves.map(n => n.id));
+                
+                return {
+                    markedNodes: selectedLeaves.map(n => n.id),
+                    markedNodeCount: selectedLeaves.length,
+                    lca: lca.id,
+                    lcaObj: lca,
+                    markedNodeObjs: selectedLeaves
+                };
+            }
+            
             // Use pre-generated fixed marked nodes (6 nodes)
             const preGeneratedMarkedNodeIds = fixedMarkedNodes[treeId] || [];
             
@@ -1497,7 +1860,7 @@ if (typeof window !== 'undefined') {
             const userAnswer = node.id;
             const correctAnswer = currentTask.lca;
             const isCorrect = userAnswer === correctAnswer;
-            const timeSpent = Math.round((Date.now() - taskStartTime) / 1000);
+            const timeSpent = Math.round((Date.now() - taskStartTime) / 100) / 10;
             
             // Highlight the correct answer
             highlightLCA(correctAnswer);
@@ -1510,6 +1873,7 @@ if (typeof window !== 'undefined') {
             
             const result = {
                 taskId: ++taskCounter,
+                isPractice: isPracticeMode,
                 treeType: treeLabel,
                 strategy: currentStrategy,
                 markedNodeCount: currentTask.markedNodeCount,
@@ -1531,8 +1895,12 @@ if (typeof window !== 'undefined') {
                     `❌ Incorrect. The correct answer is node ${correctAnswer}, you selected node ${userAnswer}. Time: ${timeSpent} seconds.`
                 );
                 
-                // Move to next task
-                currentTaskIndex++;
+                // Move to next task - increment the correct index based on mode
+                if (isPracticeMode) {
+                    practiceTaskIndex++;
+                } else {
+                    currentTaskIndex++;
+                }
                 loadNextTask();
             }, 500);
         }
@@ -1562,7 +1930,7 @@ if (typeof window !== 'undefined') {
                 selectedCountEl.textContent = selectedNodes.length;
             }
             if (taskStartTime) {
-                const elapsed = Math.round((Date.now() - taskStartTime) / 1000);
+                const elapsed = Math.round((Date.now() - taskStartTime) / 100) / 10;
                 const taskTimeEl = document.getElementById('taskTime');
                 if (taskTimeEl) {
                     taskTimeEl.textContent = elapsed;
@@ -1719,49 +2087,6 @@ if (typeof window !== 'undefined') {
         });
         
         document.getElementById('exportBtn').addEventListener('click', exportResults);
-        
-        // Export Tree Pool button
-        document.getElementById('exportPoolBtn').addEventListener('click', function() {
-            if (!poolInitialized || Object.keys(fixedTrees).length === 0) {
-                alert('Please start the experiment first to generate the tree pool!');
-                return;
-            }
-            
-            // Prepare tree pool data
-            const poolData = [];
-            
-            candidateTreesData.forEach(candidate => {
-                const tree = fixedTrees[candidate.id];
-                const markedNodes = fixedMarkedNodes[candidate.id] || [];
-                
-                if (tree) {
-                    // Convert tree to JSON string
-                    const treeJson = JSON.stringify(tree);
-                    
-                    poolData.push({
-                        treeId: candidate.id,
-                        treeName: candidate.name,
-                        treeSize: candidate.treeSize,
-                        markedNodeIds: markedNodes.join(';'),
-                        treeData: treeJson
-                    });
-                }
-            });
-            
-            // Export as JSON
-            const jsonStr = JSON.stringify(poolData, null, 2);
-            const blob = new Blob([jsonStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'tree_pool_data.json';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            alert(`Tree pool exported successfully! Total trees: ${poolData.length}`);
-        });
         
         document.getElementById('zoomInBtn').addEventListener('click', function() {
             if (svg && zoomBehavior) svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.3);
